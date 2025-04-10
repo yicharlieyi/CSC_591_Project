@@ -1,35 +1,70 @@
 # CSC_591
 Repo for CSC 591 Final Project
 
-1. This project implements an IoT-based system to monitor the status of a door (open/close) using an Inertial Measurement Unit (IMU), a cloud-based classification algorithm, and MQTT for communication. The system consists of:
+# AWS EC2 Broker
 
-2. An IMU sensor attached to a door.
+We used an AWS EC2 Linux (Ubuntu 24.04) instance as the platform for our broker since it was very simple and easy to setup, confiugre, and run.
 
-3. A Flask API running on AWS EC2 to classify door states and publish results via MQTT.
+NOTE: All commands should be run a terminal
 
-4. An MQTT client on a laptop to subscribe to the door status topic and display the current state.
-# Broker
+
+## Setup
+Go onto the AWS Console and setup an EC2 instance with the following stats
+- Ubuntu22.04
+- Allow HTTP/HTTPS traffic
+- t2.micro
+- 8GB storage
+
+Create a key pair so you can ssh into it. Make sure to save the key file
+
+Launch the instance. Go into the security settings and click on the inbound rules group. Click edit group. Add a rule to allow the mqtt clients to connect (can specifically add their IPs or just allow all - which is not advised as it is unsafe).
+
+Start the instance.
+
+## SSH In
+
+Go to where you key file is. Run the following command:
+```
+chmod 400 KEY_FILE_NAME
+```
+
+Then ssh via the following command:
+```
+ssh -i KEY_FILE_NAME ubuntu@EC2_IP
+ssh -i project.pem ubuntu@98.81.192.91
+```
 
 ## Installation
 
-Linux: 
+Run the following to download mosquitto  
+
 ```
 sudo apt-add-repository ppa:mosquitto-dev/mosquitto-ppa
 sudo apt-get update
 sudo apt-get install mosquitto
-``` 
-MAC: `brew install mosquitto`  
-Windows: Download from https://mosquitto.org/download/ and read README-windows.md  
+```  
+
+Now mosquitto should be downloaded and probably is running. We want to stop the default service and configure our own. So run  
+
+```
+sudo systemctl stop mosquitto
+```  
+
 
 ## Setup
 ### Config File
-Make a default config file and add a username and password if desired, or just allow anonymous connection. The 592_mqtt.conf file is a working example.
+A default config file needs to be made to enable clients to connect. We will go with a simple setup and not require any authentication.
 
-- For Linux, it goes in `/etc/mosquitto/conf.d`
-- Mac/Windows: Specify the path to the config file when starting the broker.
+First, make a new config file in the mosquitto config directory: 
+
+```
+touch 592_mqtt.conf
+```  
+
+Paste the contents of the `592_mqtt.conf` file the into the file just created. This allows any ip to connect without any authentication as well as logs everything in human readable format.
 
 ### Firewall
-You need to allow the port to be accessed. In Linux simply do the following:
+Linux needs to allow the port to be accessed, which can be done by changing the firewall rules.
 
 ```
 sudo ufw allow 1883 
@@ -37,26 +72,42 @@ sudo ufw enable
 ```
 
 
+## Run Broker
 ### Start Broker:
-`mosquitto -v -c /PATH_TO_CONFIG`
 
-In Linux: `mosquitto -v -c /etc/mosquitto/conf.d/592.conf`
+Run the following. You should see logs being printed in real time.
 
-Alternatively:  
-Linux: `sudo systemctl start mosquitto`  
-Mac: `brew services start mosquitto`  
-Windows: `net start mosquitto`  
+```
+mosquitto -v -c 592_mqtt.conf
+``` 
+
+Since mosquitto will not print the contents of the messages, we need to run it in the background
+
+```
+mosquitto -c 592_mqtt.conf -d
+``` 
 
 ### Stop Broker:
-Linux: `sudo systemctl stop mosquitto`  
-Mac: `brew services stop mosquitto`  
-Windows: `net stop mosquitto`  
+To stop the broker, just press `CTLR + C` in the same terminal you started it in.
+
+## Run Logger
+To capture the decisions being sent, we will use a python client. First install the requirements
+
+~~~
+sudo apt install python3-pip
+pip install paho-mqtt
+~~~
+
+Run the script:
+~~~
+python3 mqtt_broker_logs.py
+~~~
 
 # Cloud Server (AWS EC2)
 ## Connection
-- Open a terminal and navigate to the folder where the `hw3.pem` file is located.  
+- Open a terminal and navigate to the folder where the `project.pem` file is located.  
 - Use the following command to connect:  
-- `ssh -i hw3.pem ubuntu@3.145.84.19`
+- `ssh -i project.pem ubuntu@98.81.192.91`
 
 - Once connected to the EC2 instance, navigate to the folder where `app.py` is located:
 - `cd /home/ubuntu`
