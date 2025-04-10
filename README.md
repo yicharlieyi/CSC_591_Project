@@ -3,10 +3,9 @@ Repo for CSC 591 Final Project
 
 # AWS EC2 Broker
 
-We used an AWS EC2 Linux (Ubuntu 24.04) instance as the platform for our broker since it was very simple and easy to setup, confiugre, and run.
+We used an AWS EC2 Linux (Ubuntu 22.04) instance as the platform for our broker since it was very simple and easy to setup, confiugre, and run.
 
 NOTE: All commands should be run a terminal
-
 
 ## Setup
 Go onto the AWS Console and setup an EC2 instance with the following stats
@@ -31,7 +30,7 @@ chmod 400 KEY_FILE_NAME
 Then ssh via the following command:
 ```
 ssh -i KEY_FILE_NAME ubuntu@EC2_IP
-ssh -i project.pem ubuntu@98.81.192.91
+ssh -i cloud.pem ubuntu@52.91.167.82
 ```
 
 ## Installation
@@ -90,44 +89,32 @@ mosquitto -c 592_mqtt.conf -d
 ### Stop Broker:
 To stop the broker, just press `CTLR + C` in the same terminal you started it in.
 
-## Run Logger
-To capture the decisions being sent, we will use a python client. First install the requirements
+# Run Cloud System
+To run the cloud system. First install the requirements in the same EC2 instance the broker is running on:
 
 ~~~
 sudo apt install python3-pip
-pip install paho-mqtt
+pip install tabulate paho-mqtt
 ~~~
+
+Make the cloud system script:
+```
+touch cloud_system.py
+```  
+
+Paste the contents of the `cloud_system.py` file the into the file just created. 
 
 Run the script:
-~~~
-python3 mqtt_broker_logs.py
-~~~
-
-# Cloud Server (AWS EC2)
-## Connection
-- Open a terminal and navigate to the folder where the `project.pem` file is located.  
-- Use the following command to connect:  
-- `ssh -i project.pem ubuntu@98.81.192.91`
-
-- Once connected to the EC2 instance, navigate to the folder where `app.py` is located:
-- `cd /home/ubuntu`
-- Then run the Flask app:
-- `python3 app.py`
-- The Flask app should be running, receiving raw data sent from IoT device, running classification algorithm, and sending classification decisions.
-
-### Error
-- In case of error, update the install dependencies:
 ```
-sudo apt update
-sudo apt install python3 python3-pip
-pip3 install flask paho-mqtt
+python3 cloud_system.py
 ```
+Cloud system should show connection success and topic subscription message.
 
 # Client
 - On the client device, you just need to pip install the library.
-- `pip install paho-mqtt`  
-- Run the client with the following code to subscribe to the door/status topic and display the door status:  
-- `python laptop.py` 
+- `pip install tabulate paho-mqtt`  
+- Run the client with the following code to subscribe to the all the event topics and display the event status:  
+- `python sub.py` 
 
 
 ## API Documentation

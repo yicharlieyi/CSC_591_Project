@@ -4,9 +4,11 @@ import json
 from tabulate import tabulate
 from paho.mqtt.properties import Properties
 from paho.mqtt.packettypes import PacketTypes
+import time
+import sys
 
 # Configuration
-BROKER_ADDRESS = "98.81.192.91"
+BROKER_ADDRESS = "52.91.167.82"  # Change to Broker EC2 instance IP
 CLIENT_ID = "ParkingMonitor"
 TOPICS = [
     "vehicle/validate_entry/response",
@@ -21,34 +23,55 @@ TOPICS = [
 
 class ParkingMonitor:
     def __init__(self):
-        self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, 
-                                client_id=CLIENT_ID, 
-                                protocol=mqtt.MQTTv5)
-        self.client.on_connect = self.on_connect
-        self.client.on_message = self.on_message
-        self.client.on_disconnect = self.on_disconnect
-        
-        # Connect with will and session expiry
-        properties = Properties(PacketTypes.CONNECT)
-        properties.SessionExpiryInterval = 30 * 60  # 30 minutes
-        
-        self.client.connect(BROKER_ADDRESS, 
-                          port=1883, 
-                          clean_start=mqtt.MQTT_CLEAN_START_FIRST_ONLY,
-                          properties=properties,
-                          keepalive=60)
-        
-        self.client.loop_start()
-        
-        # Store billing records
+        self.connected = False
         self.billing_records = {}
-    
+        
+        try:
+            self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, 
+                                    client_id=CLIENT_ID, 
+                                    protocol=mqtt.MQTTv5)
+            self.client.on_connect = self.on_connect
+            self.client.on_message = self.on_message
+            self.client.on_disconnect = self.on_disconnect
+            
+            # Connect with will and session expiry
+            properties = Properties(PacketTypes.CONNECT)
+            properties.SessionExpiryInterval = 30 * 60  # 30 minutes
+            
+            print(f"Attempting to connect to broker at {BROKER_ADDRESS}...")
+            self.client.connect(BROKER_ADDRESS, 
+                              port=1883, 
+                              clean_start=mqtt.MQTT_CLEAN_START_FIRST_ONLY,
+                              properties=properties,
+                              keepalive=60)
+            
+            self.client.loop_start()
+            
+            # Wait for connection to establish
+            for _ in range(5):
+                if self.connected:
+                    break
+                time.sleep(1)
+            
+            if not self.connected:
+                raise ConnectionError("Failed to connect to MQTT broker")
+                
+        except Exception as e:
+            print(f"Initialization error: {str(e)}")
+            self.cleanup()
+            raise
+
     def on_connect(self, client, userdata, flags, reason_code, properties):
-        print(f"Connected to broker with result code {reason_code}")
-        for topic in TOPICS:
-            client.subscribe(topic, qos=2)
-        print("Subscribed to all topics. Waiting for messages...\n")
-    
+        if reason_code == 0:
+            print(f"Successfully connected to broker")
+            self.connected = True
+            for topic in TOPICS:
+                client.subscribe(topic, qos=2)
+            print("Subscribed to all topics. Waiting for messages...\n")
+        else:
+            print(f"Connection failed with reason code: {reason_code}")
+            self.connected = False
+
     def on_message(self, client, userdata, msg):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         topic = msg.topic
@@ -109,7 +132,8 @@ class ParkingMonitor:
             print(f"[{timestamp}] ERROR processing message: {str(e)}")
     
     def on_disconnect(self, client, userdata, flags, reason_code, properties):
-        print(f"Disconnected from broker with result code {reason_code}")
+        print(f"Disconnected from broker with reason code: {reason_code}")
+        self.connected = False
     
     def display_billing_summary(self):
         print("\n" + "="*50)
@@ -137,15 +161,25 @@ class ParkingMonitor:
         print("="*50 + "\n")
     
     def cleanup(self):
-        self.client.disconnect()
-        self.client.loop_stop()
+        try:
+            if hasattr(self, 'client'):
+                self.client.disconnect()
+                self.client.loop_stop()
+        except:
+            pass
 
 if __name__ == "__main__":
+    monitor = None
     try:
         monitor = ParkingMonitor()
         
         # Keep the program running
         while True:
+            if not monitor.connected:
+                print("Connection lost. Attempting to reconnect...")
+                monitor.cleanup()
+                monitor = ParkingMonitor()
+                
             command = input("\nEnter 'summary' to show billing report or 'exit' to quit: ").strip().lower()
             
             if command == "summary":
@@ -155,6 +189,10 @@ if __name__ == "__main__":
                 
     except KeyboardInterrupt:
         print("\nShutting down monitor...")
+    except Exception as e:
+        print(f"Error: {str(e)}")
     finally:
-        monitor.cleanup()
+        if monitor:
+            monitor.cleanup()
         print("Monitor stopped.")
+        sys.exit(0)
