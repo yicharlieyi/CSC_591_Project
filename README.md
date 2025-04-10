@@ -1,4 +1,4 @@
-# ECE_592_MQTT
+# CSC_591
 Repo for CSC 591 Final Project
 
 1. This project implements an IoT-based system to monitor the status of a door (open/close) using an Inertial Measurement Unit (IMU), a cloud-based classification algorithm, and MQTT for communication. The system consists of:
