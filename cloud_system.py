@@ -125,6 +125,7 @@ class CloudSystem:
         self._initialize_mqtt_client()
         self.system_session = 0
         self.current_occupancy = 0
+        self.last_processed_messages = {}  # Track processed messages
 
     def _initialize_mqtt_client(self):
         """Initialize and connect the MQTT client"""
@@ -188,7 +189,7 @@ class CloudSystem:
             # Subscribe to all topics
             for topic in topics.values():
                 client.subscribe(topic, qos=self.default_qos)
-                logging.debug(f"Subscribed to topic: {topic}")
+                logging.info(f"Subscribed to topic: {topic}")
         else:
             logging.error(f"Connection failed with reason code: {reason_code}")
             self.connected = False
@@ -198,7 +199,21 @@ class CloudSystem:
         try:
             payload = msg.payload.decode()
             topic = msg.topic
-            logging.debug(f"Received message on {topic}: {payload}")
+
+            # Create a message fingerprint for deduplication
+            message_fingerprint = f"{topic}:{payload}"
+            # Skip if we've recently processed this exact message
+            if message_fingerprint in self.last_processed_messages:
+                if (datetime.now() - self.last_processed_messages[message_fingerprint]).total_seconds() < 30:
+                    logging.debug(f"Skipping duplicate message on {topic}")
+                    return
+            
+            self.last_processed_messages[message_fingerprint] = datetime.now()
+            
+            # Clean up old entries
+            self._cleanup_message_cache()
+
+            logging.info(f"Received message on {topic}: {payload}")
 
             if topic == topics["validate_able_enter_req"]:
                 self._handle_able_enter(payload)
@@ -213,6 +228,16 @@ class CloudSystem:
 
         except Exception as e:
             logging.error(f"Error processing message: {str(e)}")
+
+    def _cleanup_message_cache(self):
+        """Remove old entries from the message cache"""
+        now = datetime.now()
+        to_delete = []
+        for fingerprint, timestamp in self.last_processed_messages.items():
+            if (now - timestamp).total_seconds() > 300:  # 5 minute cache
+                to_delete.append(fingerprint)
+        for fingerprint in to_delete:
+            del self.last_processed_messages[fingerprint]
 
     def _handle_able_enter(self, uid):
         """Handle vehicle entry validation request"""
@@ -268,7 +293,12 @@ class CloudSystem:
         if not vehicle:
             logging.error(f"Exit request for unknown vehicle {uid}")
             return
-
+        
+        # Check if this vehicle is already in the process of exiting
+        if vehicle.state != IN_LOT:
+            logging.warning(f"Duplicate exit request for vehicle {uid}")
+            return
+        
         session = vehicle.check_out()
         self.current_occupancy -= 1
         
