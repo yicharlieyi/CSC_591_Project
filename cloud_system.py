@@ -7,6 +7,7 @@ from paho.mqtt.properties import Properties
 from paho.mqtt.packettypes import PacketTypes
 import json
 import math
+import pytz
 
 # Topic configuration
 topics = {
@@ -33,8 +34,11 @@ logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
-    handlers=[logging.StreamHandler()]
+    handlers=[logging.StreamHandler()],
 )
+
+# Set logging timezone to US/Eastern
+logging.Formatter.converter = lambda *args: datetime.now(pytz.timezone("US/Eastern")).timetuple()
 
 # Status constants
 OUT_LOT = 0
@@ -62,8 +66,7 @@ class Vehicle:
     
     def check_in(self, system_session, timestamp=None):
         if not timestamp:
-            timestamp = datetime.now()
-
+            timestamp = datetime.now(pytz.timezone("US/Eastern"))
         self.check_ins.append(timestamp)
         self.vehicle_session += 1
         self.system_session = system_session
@@ -72,7 +75,7 @@ class Vehicle:
 
     def check_out(self, timestamp=None):
         if not timestamp:
-            timestamp = datetime.now()
+            timestamp = datetime.now(pytz.timezone("US/Eastern"))
         if not self.check_ins:
             raise ValueError("No check-in recorded for vehicle")
             
@@ -92,7 +95,7 @@ class Vehicle:
         return session
 
     def able_check_in(self):
-        now = datetime.now()
+        now = datetime.now(pytz.timezone("US/Eastern"))
         self.attempt_check_ins.append(now)
 
         # Check for rapid retries
@@ -103,7 +106,7 @@ class Vehicle:
         return self.state == OUT_LOT
         
     def able_check_out(self):
-        now = datetime.now()
+        now = datetime.now(pytz.timezone("US/Eastern"))
         self.attempt_check_outs.append(now)
 
         # Check for rapid retries
@@ -121,6 +124,7 @@ class CloudSystem:
         self.default_qos = default_qos
         self.client_id = client_id
         self.connected = False
+        
 
         self._initialize_mqtt_client()
         self.system_session = 0
@@ -204,16 +208,14 @@ class CloudSystem:
             message_fingerprint = f"{topic}:{payload}"
             # Skip if we've recently processed this exact message
             if message_fingerprint in self.last_processed_messages:
-                if (datetime.now() - self.last_processed_messages[message_fingerprint]).total_seconds() < 30:
+                if (datetime.now(pytz.timezone("US/Eastern")) - self.last_processed_messages[message_fingerprint]).total_seconds() < 30:
                     logging.debug(f"Skipping duplicate message on {topic}")
                     return
             
-            self.last_processed_messages[message_fingerprint] = datetime.now()
+            self.last_processed_messages[message_fingerprint] = datetime.now(pytz.timezone("US/Eastern"))
             
             # Clean up old entries
             self._cleanup_message_cache()
-
-            logging.info(f"Received message on {topic}: {payload}")
 
             if topic == topics["validate_able_enter_req"]:
                 self._handle_able_enter(payload)
@@ -231,7 +233,7 @@ class CloudSystem:
 
     def _cleanup_message_cache(self):
         """Remove old entries from the message cache"""
-        now = datetime.now()
+        now = datetime.now(pytz.timezone("US/Eastern"))
         to_delete = []
         for fingerprint, timestamp in self.last_processed_messages.items():
             if (now - timestamp).total_seconds() > 300:  # 5 minute cache
@@ -280,63 +282,70 @@ class CloudSystem:
         vehicle = vehicles.get(uid)
         check_in_time = vehicle.check_in(self.system_session)
         
-        # Publish system status update
-        self._publish_system_status()
-        
         # Publish entry confirmation
         self.publish("true", topics['validate_entry_resp'])
         logging.info(f"Vehicle {uid} entered at {check_in_time}")
 
     def _handle_exit(self, uid):
-        """Handle vehicle exit confirmation"""
-        vehicle = vehicles.get(uid)
-        if not vehicle:
-            logging.error(f"Exit request for unknown vehicle {uid}")
+        """Handle vehicle exit confirmation with transaction locking"""
+        lock_attr = f'_processing_exit_{uid}'
+            
+        if hasattr(self, lock_attr):
+            logging.warning(f"Exit already in progress for vehicle {uid}")
             return
         
-        # Check if this vehicle is already in the process of exiting
-        if vehicle.state != IN_LOT:
-            logging.warning(f"Duplicate exit request for vehicle {uid}")
-            return
+        setattr(self, lock_attr, True)
         
-        session = vehicle.check_out()
-        self.current_occupancy -= 1
-        
-        # Calculate charge
-        charge = self.calculate_charge(session["duration"])
-        
-        # Prepare billing record
-        billing_record = {
-            "uid": uid,
-            "check_in": session["check_in"].isoformat(),
-            "check_out": session["check_out"].isoformat(),
-            "duration": str(session["duration"]),
-            "charge": charge,
-            "system_session": session["system_session_id"],
-            "vehicle_session": session["vehicle_session_id"]
-        }
-        
-        # Publish billing information
-        self.publish(json.dumps(billing_record), topics["billing_transactions"])
-        
-        # Publish system status update
-        self._publish_system_status()
-        
-        # Publish exit confirmation
-        self.publish("true", topics['validate_exit_resp'])
-        
-        logging.info(f"Vehicle {uid} exited. Billing: ${charge:.2f}")
+        try:
+            vehicle = vehicles.get(uid)
+            if not vehicle:
+                logging.error(f"Exit request for unknown vehicle {uid}")
+                return
+
+            if vehicle.state != IN_LOT:
+                logging.warning(f"Duplicate exit request for vehicle {uid}")
+                return
+
+            session = vehicle.check_out()
+            self.current_occupancy -= 1
+
+            # Calculate charge
+            charge = self.calculate_charge(session["duration"])
+
+            # Prepare billing record
+            billing_record = {
+                "uid": uid,
+                "check_in": session["check_in"].isoformat(),
+                "check_out": session["check_out"].isoformat(),
+                "duration": str(session["duration"]),
+                "charge": charge,
+                "system_session": session["system_session_id"],
+                "vehicle_session": session["vehicle_session_id"]
+            }
+
+            self.publish(json.dumps(billing_record), topics["billing_transactions"])
+            self.publish("true", topics['validate_exit_resp'])
+            logging.info(f"Vehicle {uid} exited. Billing: ${charge:.2f}")
+
+        except Exception as e:
+            logging.error(f"Error during exit handling for {uid}: {str(e)}")
+
+        finally:
+            delattr(self, lock_attr)
 
     def _publish_system_status(self):
         """Publish current system status"""
-        status = {
-            "timestamp": datetime.now().isoformat(),
+        current_status  = {
+            "timestamp": datetime.now(pytz.timezone("US/Eastern")).isoformat(),
             "occupancy": self.current_occupancy,
             "capacity": LOT_CAPACITY,
             "status": "online",
             "available": LOT_CAPACITY - self.current_occupancy
         }
-        self.publish(json.dumps(status), topics["system_status"])
+        # Only publish if status actually changed
+        if not hasattr(self, '_last_status') or current_status != self._last_status:
+            self.publish(json.dumps(current_status), topics["system_status"])
+            self._last_status = current_status
 
     def on_disconnect(self, client, userdata, flags, reason_code, properties):
         """Handle MQTT disconnection"""

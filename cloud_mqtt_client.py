@@ -118,7 +118,7 @@ class ParkingSimulator:
             "system_session": random.randint(1000, 9999),
             "vehicle_session": random.randint(1, 10)
         }
-        self.client.publish(TOPICS["billing"], json.dumps(session), qos=2)
+        # self.client.publish(TOPICS["billing"], json.dumps(session), qos=2)
         print("Billing record published")
         time.sleep(SIMULATION_SPEED)
         

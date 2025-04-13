@@ -7,6 +7,7 @@ from paho.mqtt.packettypes import PacketTypes
 import time
 import sys
 from collections import deque
+import pytz
 
 # Configuration
 BROKER_ADDRESS = "44.204.193.8"  # EC2 instance IP
@@ -86,7 +87,7 @@ class ParkingMonitor:
             self.connected = False
 
     def on_message(self, client, userdata, msg):
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = datetime.now(pytz.timezone("US/Eastern")).strftime("%Y-%m-%d %H:%M:%S")
         topic = msg.topic
         payload = msg.payload.decode()
         
@@ -338,16 +339,16 @@ if __name__ == "__main__":
                 monitor.cleanup()
                 monitor = ParkingMonitor()
                 
-            command = input("\nCommands: [summary, events, exit]: \n").strip().lower()
+            command = input("\nCommands: [billing, events, exit]: \n").strip().lower()
             
-            if command == "summary":
+            if command == "billing":
                 monitor.display_billing_summary()
             elif command == "events":
                 monitor.display_recent_events()
             elif command == "exit":
                 break
             else:
-                print("Invalid command. Try 'summary', 'events', or 'exit'")
+                print("Invalid command. Try 'billing', 'events', or 'exit'")
                 
     except KeyboardInterrupt:
         print("\nShutting down monitor...")
