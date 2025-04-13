@@ -18,7 +18,7 @@ pip install tabulate pytz paho-mqtt
 ## Run the Script
 First, add the broker ip to line 13 of `sub.py`
 
-Navigate to the repository where the `sub.py` resides and run the scri[t] with the following code to subscribe to the all the event topics and display the event status:  
+Navigate to the repository where the `sub.py` resides and run the script with the following code to subscribe to the all the event topics and display the event status:  
 - `python sub.py` 
 
 After connecting, it will subscribe to the following topics:
