@@ -1,6 +1,14 @@
 import RPi.GPIO as GPIO
 import time
 import paho.mqtt.client as mqtt
+import logging
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s',  # Timestamp, log level, message
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[logging.StreamHandler()]  # Output to console
+)
 
 # --- GPIO Setup ---
 ENTRY_MOTOR_PIN = 18
@@ -41,29 +49,29 @@ TOPICS = [
 ]
 
 def on_connect(client, userdata, flags, rc):
-    print("Connected with result code", rc)
+    logging.info(f"Connected with result code {rc}")
     client.subscribe(TOPICS)
 
 def on_message(client, userdata, msg):
     topic = msg.topic.strip()
-    print(f"Received message on topic: {topic}")
+    logging.info(f"Received message on topic: {topic}")
 
     if topic == "/gate/entry/open":
-        print("Opening ENTRY gate")
+        logging.info("Opening ENTRY gate")
         #open_gate(entry_pwm)
         close_gate(entry_pwm)
 
     elif topic == "/gate/entry/close":
-        print("Closing ENTRY gate")
+        logging.info("Closing ENTRY gate")
         #close_gate(entry_pwm)
         open_gate(entry_pwm)
 
     elif topic == "/gate/exit/open":
-        print("Opening EXIT gate")
+        logging.info("Opening EXIT gate")
         open_gate(exit_pwm)
 
     elif topic == "/gate/exit/close":
-        print("Closing EXIT gate")
+        logging.info("Closing EXIT gate")
         close_gate(exit_pwm)
 
 client = mqtt.Client()
@@ -71,20 +79,20 @@ client.on_connect = on_connect
 client.on_message = on_message
 
 try:
-    print("Setting default state: gates closed")
+    logging.info("Setting default state: gates closed")
     #close_gate(entry_pwm)
     open_gate(entry_pwm)
     close_gate(exit_pwm)
 
-    print("Connecting to MQTT broker...")
+    logging.info("Connecting to MQTT broker...")
     client.connect(BROKER, PORT, 60)
     client.loop_forever()
 
 except KeyboardInterrupt:
-    print("Interrupted")
+    logging.info("Interrupted")
 
 finally:
-    print("Cleaning up GPIO")
+    logging.info("Cleaning up GPIO")
     entry_pwm.stop()
     exit_pwm.stop()
     GPIO.cleanup()
