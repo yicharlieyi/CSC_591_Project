@@ -207,10 +207,10 @@ class CloudSystem:
             # Create a message fingerprint for deduplication
             message_fingerprint = f"{topic}:{payload}"
             # Skip if we've recently processed this exact message
-            if message_fingerprint in self.last_processed_messages:
-                if (datetime.now(pytz.timezone("US/Eastern")) - self.last_processed_messages[message_fingerprint]).total_seconds() < 30:
-                    logging.debug(f"Skipping duplicate message on {topic}")
-                    return
+            # if message_fingerprint in self.last_processed_messages:
+            #     if (datetime.now(pytz.timezone("US/Eastern")) - self.last_processed_messages[message_fingerprint]).total_seconds() < 30:
+            #         logging.debug(f"Skipping duplicate message on {topic}")
+            #         return
             
             self.last_processed_messages[message_fingerprint] = datetime.now(pytz.timezone("US/Eastern"))
             
